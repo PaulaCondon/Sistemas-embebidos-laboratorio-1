@@ -1,7 +1,9 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
+
 LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección del módulo I2C
+
 
 #define MOISTURE_PIN A0
 #define RELAY_PIN 7
@@ -11,12 +13,25 @@ LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección del módulo I2C
 #define BUTTON_MOISTURE_PIN 11
 #define BUTTON_PANTALLA_PIN 12
 
+
 // Variables configurables
 unsigned long howOften = 3600000; // en milisegundos (default: 1 hora)
 unsigned long howLong = 10000;    // duración del riego en ms
 int minMoisture = 30;             // humedad mínima %
 bool modoProgramado = true;
 int pantallaActual = 0;
+
+
+// === Función para suavizar lecturas del sensor ===
+int leerHumedadSuavizada() {
+  long suma = 0;
+  for (int i = 0; i < 10; i++) {
+    suma += analogRead(MOISTURE_PIN);
+    delay(5);
+  }
+  return suma / 10;
+}
+
 
 void setup() {
   pinMode(RELAY_PIN, OUTPUT);
@@ -26,18 +41,34 @@ void setup() {
   pinMode(BUTTON_MOISTURE_PIN, INPUT_PULLUP);
   pinMode(BUTTON_PANTALLA_PIN, INPUT_PULLUP);
 
+
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Sistema Riego");
   delay(1000);
   lcd.clear();
+
+
+  Serial.begin(9600);  // Inicializa el monitor serie
 }
+
 
 void loop() {
   static bool lastMode = HIGH, lastOften = HIGH, lastLong = HIGH, lastMoist = HIGH, lastPantalla = HIGH;
-  int valorBruto = analogRead(MOISTURE_PIN);
-  int humedad = map(valorBruto, 1023, 0, 0, 100);
+
+
+  int valorBruto = leerHumedadSuavizada();
+  int humedad = constrain(map(valorBruto, 1023, 0, 0, 100), 0, 100);
+
+
+  // Mostrar en monitor serie
+  Serial.print("ADC bruto: ");
+  Serial.print(valorBruto);
+  Serial.print(" | Humedad: ");
+  Serial.print(humedad);
+  Serial.println("%");
+
 
   // === Cambio de pantalla con botón ===
   int estadoPantalla = digitalRead(BUTTON_PANTALLA_PIN);
@@ -47,6 +78,7 @@ void loop() {
     delay(300);
   }
   lastPantalla = estadoPantalla;
+
 
   switch (pantallaActual) {
     case 0:
@@ -59,6 +91,7 @@ void loop() {
       lcd.print("%   ");
       break;
 
+
     case 1:
       lcd.setCursor(0, 0);
       lcd.print("H.O:");
@@ -69,6 +102,7 @@ void loop() {
       lcd.print(howLong / 1000);
       lcd.print("s     ");
       break;
+
 
     case 2:
       lcd.setCursor(0, 0);
@@ -82,6 +116,7 @@ void loop() {
       break;
   }
 
+
   // === Activar riego si necesario ===
   if (modoProgramado && humedad < minMoisture) {
     digitalWrite(RELAY_PIN, HIGH);
@@ -89,7 +124,8 @@ void loop() {
     digitalWrite(RELAY_PIN, LOW);
   }
 
-  // === Lectura de botones (con switch-case) ===
+
+  // === Lectura de botones ===
   int botones[] = {BUTTON_MODE_PIN, BUTTON_HOWOFTEN_PIN, BUTTON_HOWLONG_PIN, BUTTON_MOISTURE_PIN};
   for (int i = 0; i < 4; i++) {
     int estado = digitalRead(botones[i]);
@@ -102,6 +138,7 @@ void loop() {
         lastMode = estado;
         break;
 
+
       case 1: // HOW OFTEN
         if (estado == LOW && lastOften == HIGH) {
           howOften += 60000; // +1 minuto
@@ -110,6 +147,7 @@ void loop() {
         lastOften = estado;
         break;
 
+
       case 2: // HOW LONG
         if (estado == LOW && lastLong == HIGH) {
           howLong += 5000; // +5 segundos
@@ -117,6 +155,7 @@ void loop() {
         }
         lastLong = estado;
         break;
+
 
       case 3: // MOISTURE
         if (estado == LOW && lastMoist == HIGH) {
@@ -127,6 +166,7 @@ void loop() {
         break;
     }
   }
+
 
   delay(100);
 }
