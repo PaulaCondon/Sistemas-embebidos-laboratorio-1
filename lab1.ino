@@ -1,9 +1,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-
 LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección del módulo I2C
-
 
 #define MOISTURE_PIN A0
 #define RELAY_PIN 7
@@ -13,14 +11,16 @@ LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección del módulo I2C
 #define BUTTON_MOISTURE_PIN 11
 #define BUTTON_PANTALLA_PIN 12
 
-
 // Variables configurables
 unsigned long howOften = 3600000; // en milisegundos (default: 1 hora)
 unsigned long howLong = 10000;    // duración del riego en ms
-int minMoisture = 30;             // humedad mínima %
+int minMoisture = 50;             // humedad mínima %
 bool modoProgramado = true;
 int pantallaActual = 0;
 
+// Variables para riego 
+bool regando = false;
+unsigned long tiempoInicioRiego = 0;
 
 // === Función para suavizar lecturas del sensor ===
 int leerHumedadSuavizada() {
@@ -32,7 +32,6 @@ int leerHumedadSuavizada() {
   return suma / 10;
 }
 
-
 void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(BUTTON_MODE_PIN, INPUT_PULLUP);
@@ -41,7 +40,6 @@ void setup() {
   pinMode(BUTTON_MOISTURE_PIN, INPUT_PULLUP);
   pinMode(BUTTON_PANTALLA_PIN, INPUT_PULLUP);
 
-
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0);
@@ -49,17 +47,15 @@ void setup() {
   delay(1000);
   lcd.clear();
 
-
   Serial.begin(9600);  // Inicializa el monitor serie
 }
-
 
 void loop() {
   static bool lastMode = HIGH, lastOften = HIGH, lastLong = HIGH, lastMoist = HIGH, lastPantalla = HIGH;
 
-
   int valorBruto = leerHumedadSuavizada();
-  int humedad = constrain(map(valorBruto, 1023, 0, 0, 100), 0, 100);
+  //int humedad = constrain(map(valorBruto, 1023, 0, 0, 100), 0, 100);
+  int humedad = constrain(map(valorBruto, 1024, 500, 0, 100), 0, 100);
 
 
   // Mostrar en monitor serie
@@ -69,7 +65,6 @@ void loop() {
   Serial.print(humedad);
   Serial.println("%");
 
-
   // === Cambio de pantalla con botón ===
   int estadoPantalla = digitalRead(BUTTON_PANTALLA_PIN);
   if (estadoPantalla == LOW && lastPantalla == HIGH) {
@@ -78,7 +73,6 @@ void loop() {
     delay(300);
   }
   lastPantalla = estadoPantalla;
-
 
   switch (pantallaActual) {
     case 0:
@@ -91,7 +85,6 @@ void loop() {
       lcd.print("%   ");
       break;
 
-
     case 1:
       lcd.setCursor(0, 0);
       lcd.print("H.O:");
@@ -102,7 +95,6 @@ void loop() {
       lcd.print(howLong / 1000);
       lcd.print("s     ");
       break;
-
 
     case 2:
       lcd.setCursor(0, 0);
@@ -116,14 +108,19 @@ void loop() {
       break;
   }
 
-
-  // === Activar riego si necesario ===
-  if (modoProgramado && humedad < minMoisture) {
+  // === Activar riego si necesario (no bloqueante) ===
+  if (modoProgramado && humedad < minMoisture && !regando) {
+    regando = true;
+    tiempoInicioRiego = millis();
     digitalWrite(RELAY_PIN, HIGH);
-    delay(howLong);
-    digitalWrite(RELAY_PIN, LOW);
+    Serial.println("Riego ACTIVADO");
   }
 
+  if (regando && millis() - tiempoInicioRiego >= howLong) {
+    digitalWrite(RELAY_PIN, LOW);
+    regando = false;
+    Serial.println("Riego DESACTIVADO");
+  }
 
   // === Lectura de botones ===
   int botones[] = {BUTTON_MODE_PIN, BUTTON_HOWOFTEN_PIN, BUTTON_HOWLONG_PIN, BUTTON_MOISTURE_PIN};
@@ -133,33 +130,41 @@ void loop() {
       case 0: // MODE
         if (estado == LOW && lastMode == HIGH) {
           modoProgramado = !modoProgramado;
+          Serial.print("Cambio de modo a: ");
+          Serial.println(modoProgramado ? "Programado" : "Manual");
           delay(300);
         }
         lastMode = estado;
         break;
 
-
       case 1: // HOW OFTEN
         if (estado == LOW && lastOften == HIGH) {
           howOften += 60000; // +1 minuto
+          Serial.print("Nuevo intervalo (howOften): ");
+          Serial.print(howOften / 60000);
+          Serial.println(" minutos");
           delay(300);
         }
         lastOften = estado;
         break;
 
-
       case 2: // HOW LONG
         if (estado == LOW && lastLong == HIGH) {
           howLong += 5000; // +5 segundos
+          Serial.print("Nueva duracion (howLong): ");
+          Serial.print(howLong / 1000);
+          Serial.println(" segundos");
           delay(300);
         }
         lastLong = estado;
         break;
 
-
       case 3: // MOISTURE
         if (estado == LOW && lastMoist == HIGH) {
           minMoisture += 5; // +5%
+          Serial.print("Nueva humedad mínima: ");
+          Serial.print(minMoisture);
+          Serial.println("%");
           delay(300);
         }
         lastMoist = estado;
@@ -167,6 +172,5 @@ void loop() {
     }
   }
 
-
-  delay(100);
+  delay(100); // No bloquea nada importante
 }
