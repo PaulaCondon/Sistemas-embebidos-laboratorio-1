@@ -1,9 +1,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-
 LiquidCrystal_I2C lcd(0x27, 16, 2); // Dirección del módulo I2C
-
 
 #define MOISTURE_PIN A0
 #define RELAY_PIN 7
@@ -166,7 +164,6 @@ void loop() {
         break;
     }
   }
-
 
   delay(100);
 }
